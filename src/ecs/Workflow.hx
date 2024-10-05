@@ -218,14 +218,19 @@ class Workflow {
 
 	// Entity
 
-	@:allow(ecs.Entity) static function id(immediate:Bool, worlds:Int):Int {
-		var id = idPool.pop();
-
-		if (id == null) {
-			id = nextId++;
+	@:allow(ecs.Entity) static function id(immediate:Bool, worlds:Int, ?_persisted:Int = INVALID_ID):Int {
+		var id:Null<Int> = INVALID_ID;
+		if (_persisted != INVALID_ID) {
+			id = _persisted;
 			_generations[id] = 0;
 		} else {
-			_generations[id]++;
+			id = idPool.pop();
+			if (id == null) {
+				id = nextId++;
+				_generations[id] = 0;
+			} else {
+				_generations[id]++;
+			}
 		}
 
 		#if ecs_max_entities
@@ -377,8 +382,6 @@ class Workflow {
 		#end
 	}
 
-	#if factories
-	#end
 	@:allow(ecs.Entity) static inline function setWorlds(id:Int, flags:Int) {
 		if (status(id) == Active) {
 			remove(id);

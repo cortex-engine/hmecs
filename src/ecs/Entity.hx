@@ -7,6 +7,8 @@ using ecs.core.macro.ComponentBuilder;
 using ecs.core.macro.ViewsOfComponentBuilder;
 using ecs.core.macro.MacroTools;
 using haxe.macro.Context;
+using haxe.macro.TypeTools;
+using haxe.macro.ComplexTypeTools;
 using Lambda;
 using StringTools;
 #else
@@ -129,29 +131,61 @@ abstract Entity(Int) from Int to Int {
 	}
 
 	#if macro
-	static function getComponentContainerInfo(c:haxe.macro.Expr, pos:haxe.macro.Expr.Position) {
-		var to = c.typeof();
-		if (to == null) {
+	static function getAllComponentContainerInfos(c:haxe.macro.Expr, pos:haxe.macro.Expr.Position):Array<StorageInfo> {
+		var res = [];
+
+		var type = c.typeof();
+		if (type == null) {
 			Context.fatalError('Can not find type for ${c} ', pos);
 		}
-		var type = to;
 
-		return switch (type) {
+		// iterate up the inheritance chain to find all matching component containers
+		// trace(type.followWithAbstracts());
+		var cls = type.followWithAbstracts().getClass();
+
+		// check for interfaces that match
+		// TODO: this will make a storage for every interface!
+		for (i in cls.interfaces) {
+			final int = i.t.get();
+            final tpc = TPath({name:int.name, pack:int.pack});
+			res.push(tpc.getComponentContainerInfo(pos));
+		}
+
+		// trace(cls);
+		// TODO: this will branch out and grab every class and make a storage for it!
+		var sc = cls.superClass;
+		while (sc != null) {
+			var st = sc.t.get();
+			for (i in st.interfaces) {
+				final int = i.t.get();
+	            final tpc = TPath({name:int.name, pack:int.pack});
+				res.push(tpc.getComponentContainerInfo(pos));
+			}
+			final tpc = TPath({name:st.name, pack:st.pack});
+			res.push(tpc.getComponentContainerInfo(pos));
+			sc = st.superClass;
+		}
+
+		switch (type) {
 			case TType(tref, args):
 				if (tref.get().name.contains("Class<")) {
 					var cn = c.parseClassName();
 					var clt = cn.getType();
 					var tt = clt.follow();
 					var compt = tt.toComplexType();
-					compt.getComponentContainerInfo(pos);
+					// trace("TType(tref, args)");
+					res.push(compt.getComponentContainerInfo(pos));
 				} else {
 					// Typedef
-					(type.follow().toComplexType()).getComponentContainerInfo(pos);
+					// trace("Typedef");
+					res.push((type.follow().toComplexType()).getComponentContainerInfo(pos));
 				}
 			// class is specified instead of an expression
 			default:
-				(type.follow().toComplexType()).getComponentContainerInfo(pos);
+				res.push((type.follow().toComplexType()).getComponentContainerInfo(pos));
 		}
+
+		return res;
 	}
 	#end
 
@@ -168,13 +202,15 @@ abstract Entity(Int) from Int to Int {
 			Context.error('Required one or more Components', pos);
 		}
 
-		var addComponentsToContainersExprs = components.map(function(c) {
-			var info = getComponentContainerInfo(c, pos);
+		// trace(components);
 
-			return info.getAddExpr(macro __entity__, c);
-			// var containerName = (c.typeof().follow().toComplexType()).getComponentContainerInfo().fullName;
-			// return macro @:privateAccess $i{ containerName }.inst().add(__entity__, $c);
-		});
+		// TODO: check superclasses for component matches and add the storage line
+		var addComponentsToContainersExprs = [];
+		for (c in components) {
+			var infos:Array<StorageInfo> = getAllComponentContainerInfos(c, pos);
+			for (info in infos)
+				addComponentsToContainersExprs.push(info.getAddExpr(macro __entity__, c));
+		}
 
 		var body = [].concat(addComponentsToContainersExprs).concat([
 			macro if (__entity__.isActive()) {
@@ -528,11 +564,12 @@ abstract EntityRef(haxe.Int64) from haxe.Int64 to haxe.Int64 {
 			Context.error('Required one or more Components', pos);
 		}
 
-		var addComponentsToContainersExprs = components.map(function(c) {
-			var info = @:privateAccess Entity.getComponentContainerInfo(c, pos);
-
-			return info.getAddExpr(macro __entity__, c);
-		});
+		var addComponentsToContainersExprs = [];
+		for (c in components) {
+			var infos:Array<StorageInfo> = @:privateAccess Entity.getAllComponentContainerInfos(c, pos);
+			for (info in infos)
+				addComponentsToContainersExprs.push(info.getAddExpr(macro __entity__, c));
+		}
 
 		var body = [].concat(addComponentsToContainersExprs).concat([
 			macro if (__entity__.isActive()) {
