@@ -140,17 +140,17 @@ class Workflow {
 	 * @param dt deltatime
 	 */
 	public static function update(dt:Float) {
-		#if ecs_profiling
-		var timestamp = Date.now().getTime();
-		#end
+		// #if ecs_profiling
+		// var timestamp = Date.now().getTime();
+		// #end
 
 		for (s in systems) {
 			s.__update__(dt);
 		}
 
-		#if ecs_profiling
-		updateTime = Std.int(Date.now().getTime() - timestamp);
-		#end
+		// #if ecs_profiling
+		// updateTime = Std.int(Date.now().getTime() - timestamp);
+		// #end
 	}
 
 	/**
@@ -412,7 +412,15 @@ class Workflow {
 		if (status(id) < Cached) {
 			removeAllComponentsOf(id);
 			_entities.remove(id);
-			idPool.push(id);
+
+			// trace(idPool);
+
+			// TODO: somehow we managed to double-add an id to the pool by destroying an entity multiple times... !
+			idPool.remove(id);
+			idPool.push(id); 
+
+			// trace(idPool);
+
 			statuses[id] = Cached;
 		}
 	}
